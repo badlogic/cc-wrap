@@ -1,0 +1,39 @@
+{
+	"name": "ccwrap",
+	"version": "0.1.0",
+	"description": "TypeScript API wrapper for Claude Code supporting interactive and non-interactive modes",
+	"main": "dist/index.js",
+	"scripts": {
+		"build": "tsc",
+		"dev": "tsc --watch --preserveWatchOutput",
+		"clean": "rm -rf dist",
+		"prepublishOnly": "npm run clean && npm run build",
+		"check": "biome check . && tsc --noEmit"
+	},
+	"files": [
+		"dist/**/*",
+		"README.md"
+	],
+	"keywords": [
+		"claude",
+		"anthropic",
+		"api",
+		"wrapper",
+		"typescript"
+	],
+	"author": "",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": ""
+	},
+	"engines": {
+		"node": ">=16.0.0"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.1.3",
+		"@types/node": "^20.19.9",
+		"typescript": "^5.0.0"
+	},
+	"types": "./dist/index.d.ts"
+}
