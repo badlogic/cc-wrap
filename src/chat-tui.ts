@@ -88,8 +88,8 @@ async function main() {
 	// Patch Claude binary automatically on startup
 	patchClaudeBinary();
 
-	// Get initial prompt
-	const initialPrompt = process.argv[2];
+	// Get initial prompts (all command-line arguments after the script name)
+	const initialPrompts = process.argv.slice(2);
 	const configDir = join(homedir(), ".ccwrap");
 
 	// Initialize Claude
@@ -129,17 +129,42 @@ async function main() {
 	);
 	editor.setAutocompleteProvider(autocompleteProvider);
 
+	// Create prompt queue container
+	const queueContainer = new Container();
+
 	// Add components to UI
 	ui.addChild(header);
 	ui.addChild(systemInfo);
 	ui.addChild(chatContainer);
 	ui.addChild(loadingContainer);
+	ui.addChild(queueContainer);
 	ui.addChild(editor);
 	ui.setFocus(editor);
 
 	let currentLoadingAnimation: LoadingAnimation | null = null;
 	let isProcessing = false;
 	let currentQueryGenerator: AsyncGenerator<SDKMessage> | null = null;
+	let promptQueue: string[] = [];
+	let isProcessingQueue = false;
+
+	// Function to update queue display
+	function updateQueueDisplay() {
+		queueContainer.clear();
+		if (promptQueue.length > 0) {
+			queueContainer.addChild(new TextComponent(chalk.yellow("Queued prompts:")));
+			promptQueue.forEach((prompt, index) => {
+				const displayPrompt = prompt === "<EXIT>" ? chalk.red("<EXIT>") : prompt;
+				queueContainer.addChild(
+					new TextComponent(
+						chalk.dim(
+							`  ${index + 1}. ${displayPrompt.substring(0, 80)}${displayPrompt.length > 80 ? "..." : ""}`,
+						),
+					),
+				);
+			});
+			queueContainer.addChild(new WhitespaceComponent(1));
+		}
+	}
 
 	// Set up global key handler for Escape
 	ui.onGlobalKeyPress = (data: string): boolean => {
@@ -281,8 +306,8 @@ async function main() {
 		text = text.trim();
 		if (!text) return;
 
-		// Don't allow submission while Claude is processing
-		if (isProcessing) return;
+		// Don't allow submission while Claude is processing or queue is being processed
+		if (isProcessing || isProcessingQueue) return;
 
 		// Handle slash commands
 		if (text.startsWith("/")) {
@@ -339,15 +364,43 @@ async function main() {
 	// Start the UI
 	ui.start();
 
-	// Send initial prompt if provided
-	if (initialPrompt) {
-		// Add user message to chat
-		chatContainer.addChild(new TextComponent(chalk.green("You")));
-		chatContainer.addChild(new MarkdownComponent(initialPrompt));
-		chatContainer.addChild(new WhitespaceComponent(1));
+	// Process initial prompts if provided
+	if (initialPrompts.length > 0) {
+		// Initialize the prompt queue
+		promptQueue = [...initialPrompts];
+		isProcessingQueue = true;
+		updateQueueDisplay();
 
-		// Process the query
-		processQuery(initialPrompt);
+		// Process prompts sequentially
+		async function processPromptQueue() {
+			while (promptQueue.length > 0) {
+				const prompt = promptQueue.shift()!;
+				updateQueueDisplay();
+
+				// Check for exit command
+				if (prompt === "<EXIT>") {
+					claude.stop();
+					ui.stop();
+					process.exit(0);
+					return;
+				}
+
+				// Add user message to chat
+				chatContainer.addChild(new TextComponent(chalk.green("You")));
+				chatContainer.addChild(new MarkdownComponent(prompt));
+				chatContainer.addChild(new WhitespaceComponent(1));
+
+				// Process the query and wait for completion
+				await processQuery(prompt);
+			}
+
+			// Queue processing complete
+			isProcessingQueue = false;
+			updateQueueDisplay();
+		}
+
+		// Start processing the queue
+		processPromptQueue();
 	}
 }
 
