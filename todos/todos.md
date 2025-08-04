@@ -1,4 +1,3 @@
-- Interrupting in chat-tui.ts kills process, doesn't recreate it upon new user query
 - Clean-up chat-tui.ts, tool-renderers.ts
     - Each type of message/tool needs its own TUI component. Do we need a type field to test what component something is, or will instanceof work in TS?
     - Some components need to have expand/collapse() methods. this is especially true for

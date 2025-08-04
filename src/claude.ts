@@ -103,19 +103,44 @@ interface ErrorEvent {
 type InternalEvent = SDKMessage | ErrorEvent;
 
 export class Claude {
-	private process: ChildProcess;
-	private rl: Interface;
+	private process!: ChildProcess;
+	private rl!: Interface;
 	private sessionId: string = "";
 	private currentHandler: ((event: InternalEvent) => void) | null = null;
 	private error: Error | null = null;
 	private isInterrupted = false;
+	private needsRecreation = false;
+	private args: string[];
+	private env: Record<string, string>;
 
 	constructor(args: string[], env: Record<string, string>) {
+		// Store args for recreation
+		this.args = args;
+		this.env = env;
+
+		// Spawn initial process
+		this.spawnProcess();
+	}
+
+	private spawnProcess(): void {
+		// Preserve session by adding resume flag if we have a session
+		const argsWithSession = [...this.args];
+		if (this.sessionId && !argsWithSession.includes("--session") && !argsWithSession.includes("--resume")) {
+			argsWithSession.push("--resume", this.sessionId);
+		}
+
 		// Always add required args for interactive mode
-		const fullArgs = ["--output-format", "stream-json", "--input-format", "stream-json", "--verbose", ...args];
+		const fullArgs = [
+			"--output-format",
+			"stream-json",
+			"--input-format",
+			"stream-json",
+			"--verbose",
+			...argsWithSession,
+		];
 
 		this.process = spawn(getClaudePath(), fullArgs, {
-			env: { ...process.env, ...env },
+			env: { ...process.env, ...this.env },
 			stdio: ["pipe", "pipe", "pipe"],
 		});
 
@@ -148,10 +173,11 @@ export class Claude {
 
 		this.process.on("exit", (code, _signal) => {
 			if (this.isInterrupted) {
-				// Process was interrupted by user
-				this.error = new Error("Interrupted by user");
+				// Mark for recreation instead of setting permanent error
+				this.needsRecreation = true;
+				// Send error event to stop the async generator
 				if (this.currentHandler) {
-					this.currentHandler({ type: "error", error: this.error });
+					this.currentHandler({ type: "error", error: new Error("Interrupted by user") });
 				}
 			} else if (code !== 0) {
 				this.error = new Error(`Claude process exited with code ${code}`);
@@ -165,6 +191,23 @@ export class Claude {
 	async *query(prompt: string): AsyncGenerator<SDKMessage> {
 		if (this.currentHandler) {
 			throw new Error("Query already in progress");
+		}
+
+		// Check if process needs recreation (from interrupt)
+		if (this.needsRecreation) {
+			// Stop old process if exists
+			if (this.process && !this.process.killed) {
+				this.rl.close();
+				this.process.kill();
+			}
+
+			// Clear error state and recreate
+			this.error = null;
+			this.needsRecreation = false;
+			this.isInterrupted = false;
+
+			// Respawn process with session preservation
+			this.spawnProcess();
 		}
 
 		if (this.error) {
@@ -233,12 +276,14 @@ export class Claude {
 	}
 
 	interrupt(): void {
-		// Mark as interrupted
+		// Mark as interrupted and needs recreation
 		this.isInterrupted = true;
+		this.needsRecreation = true;
 
 		// Kill the process - this is what actually stops Claude
 		if (this.process && !this.process.killed) {
 			this.process.kill("SIGTERM");
+			this.rl.close();
 		}
 	}
 

@@ -174,9 +174,15 @@ async function main() {
 				// Send interrupt request (synchronous now)
 				claude.interrupt();
 
-				// Show success feedback
-				chatContainer.addChild(new TextComponent(chalk.yellow("[Processing interrupted]"), { bottom: 1 }));
+				// Stop the loading animation immediately
+				if (currentLoadingAnimation) {
+					currentLoadingAnimation.stop();
+					loadingContainer.clear();
+					currentLoadingAnimation = null;
+				}
 				ui.requestRender();
+
+				// The error will be caught in the processQuery try/catch
 			} catch (error) {
 				// Show error feedback
 				chatContainer.addChild(
