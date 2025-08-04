@@ -1,4 +1,3 @@
-import type { TextComponent } from "@mariozechner/tui";
 import chalk from "chalk";
 
 interface ToolResult {
@@ -54,7 +53,7 @@ export class ToolRenderer {
 	 */
 	static renderToolResult(
 		block: ToolResult,
-		toolName?: string,
+		_toolName?: string,
 	): {
 		header: string;
 		content: string;
@@ -244,7 +243,7 @@ export class ToolRenderer {
 				const valueStr =
 					typeof value === "string"
 						? value.length > 50
-							? value.substring(0, 50) + "..."
+							? `${value.substring(0, 50)}...`
 							: value
 						: JSON.stringify(value);
 				return `${key}: ${valueStr}`;
