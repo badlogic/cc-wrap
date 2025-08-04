@@ -1,7 +1,5 @@
-import { mkdirSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { homedir } from "node:os";
 import { join } from "node:path";
-import type { SDKMessage, SDKUserMessage, SDKResultMessage } from "@anthropic-ai/claude-code";
 import {
 	CombinedAutocompleteProvider,
 	Container,
@@ -12,7 +10,8 @@ import {
 	WhitespaceComponent,
 } from "@mariozechner/tui";
 import chalk from "chalk";
-import { type ClaudeInitInfo, claude } from "./claude.js";
+import { Claude, type ClaudeEvent, patchClaudeBinary } from "./claude.js";
+import type { SDKResultMessage } from "./index.js";
 import { ToolRenderer } from "./tool-renderers.js";
 
 class LoadingAnimation extends TextComponent {
@@ -22,7 +21,7 @@ class LoadingAnimation extends TextComponent {
 	private ui: TUI | null = null;
 
 	constructor(ui: TUI) {
-		super("");
+		super("", { bottom: 1 });
 		this.ui = ui;
 		this.start();
 	}
@@ -79,19 +78,6 @@ class ResultMessage extends TextComponent {
 	}
 }
 
-async function getInitInfo(): Promise<ClaudeInitInfo> {
-	// Create a temporary directory for the initial probe
-	const tmpConfigDir = join(tmpdir(), `ccwrap-init-${Date.now()}`);
-	mkdirSync(tmpConfigDir, { recursive: true });
-
-	// Run a quick command to get init info
-	const claudeInstance = claude({ configDir: tmpConfigDir });
-	const initInfo = await claudeInstance.sendPrompt("say hi");
-
-	claudeInstance.stop();
-	return initInfo;
-}
-
 async function main() {
 	if (!process.env.ANTHROPIC_API_KEY && !process.env.CLAUDE_CODE_OAUTH_TOKEN) {
 		console.error(chalk.red("Error: No authentication found."));
@@ -99,28 +85,31 @@ async function main() {
 		process.exit(1);
 	}
 
-	// Get init info before starting UI
-	console.log(chalk.dim("Initializing Claude..."));
-	const initInfo = await getInitInfo();
+	// Patch Claude binary automatically on startup
+	patchClaudeBinary();
 
+	// Get initial prompt
 	const initialPrompt = process.argv[2];
 	const configDir = join(homedir(), ".ccwrap");
+
+	// Initialize Claude
+	console.log(chalk.dim("Initializing Claude..."));
+	const claude = new Claude([], {
+		...process.env,
+		CLAUDE_CONFIG_DIR: configDir,
+		CLAUDE_CODE_ENTRYPOINT: "sdk-ts",
+	});
 
 	const ui = new TUI();
 	const header = new TextComponent(chalk.bold("Claude Code SDK Chat"), { bottom: 1 });
 	const chatContainer = new Container();
 	const loadingContainer = new Container();
 
-	// Show system info at the top
+	// Show basic info at the top
 	const systemInfo = new TextComponent(
 		`${chalk.gray("─".repeat(80))}\n` +
-			`${chalk.blue("Session:")} ${chalk.dim(initInfo.sessionId)}\n` +
-			`${chalk.blue("Model:")} ${chalk.white(initInfo.model)}\n` +
 			`${chalk.blue("Config:")} ${chalk.dim(configDir)}\n` +
-			`${chalk.blue("Tools:")} ${chalk.dim(initInfo.tools.join(", "))}\n` +
-			`${chalk.blue("MCP Servers:")} ${chalk.dim(
-				initInfo.mcpServers.map((s) => `${s.name} (${s.status})`).join(", ") || "none",
-			)}\n` +
+			`${chalk.blue("Working Directory:")} ${chalk.dim(process.cwd())}\n` +
 			`${chalk.gray("─".repeat(80))}\n\n` +
 			`${chalk.dim("Type /help for commands or start chatting with Claude")}\n` +
 			`${chalk.dim("Press Escape to interrupt Claude while processing")}`,
@@ -148,23 +137,16 @@ async function main() {
 	ui.addChild(editor);
 	ui.setFocus(editor);
 
-	// Start Claude in interactive mode
-	const claudeInstance = claude({
-		configDir,
-		workingDir: process.cwd(),
-		verbose: true,
-	});
-	await claudeInstance.startInteractive();
-
 	let currentLoadingAnimation: LoadingAnimation | null = null;
 	let isProcessing = false;
+	let currentQueryGenerator: AsyncGenerator<ClaudeEvent> | null = null;
 
 	// Set up global key handler for Escape
 	ui.onGlobalKeyPress = (data: string): boolean => {
 		// Intercept Escape key when Claude is processing
 		if (data === "\x1b" && isProcessing) {
 			// Send interrupt request
-			claudeInstance.interrupt().catch(() => {
+			claude.interrupt().catch(() => {
 				// Ignore errors
 			});
 
@@ -180,85 +162,108 @@ async function main() {
 		return true;
 	};
 
-	// Handle Claude messages
-	(async () => {
-		for await (const message of claudeInstance.messages()) {
-			const msgType = message.type;
-			switch (msgType) {
-				case "assistant": {
-					for (const block of message.message.content) {
-						if (block.type === "text" && block.text) {
-							chatContainer.addChild(new TextComponent(chalk.magenta("Claude")));
-							chatContainer.addChild(new MarkdownComponent(block.text));
-							chatContainer.addChild(new WhitespaceComponent(1));
-						} else if (block.type === "tool_use") {
-							// Use custom renderer for tool calls
-							const toolInfo = ToolRenderer.renderToolUse(block);
-							const toolMsg = new TextComponent(toolInfo, { bottom: 1 });
-							chatContainer.addChild(toolMsg);
-						}
-					}
-					ui.requestRender();
-					break;
-				}
+	// Function to process a query
+	async function processQuery(prompt: string) {
+		// Mark as processing
+		isProcessing = true;
+		editor.disableSubmit = true;
 
-				case "user": {
-					// Handle tool results and subagent messages
-					if (message.parent_tool_use_id) {
-						// TODO This is a subagent message - ignore for now
+		// Show loading animation
+		currentLoadingAnimation = new LoadingAnimation(ui);
+		loadingContainer.addChild(currentLoadingAnimation);
+		ui.requestRender();
+
+		try {
+			currentQueryGenerator = claude.query(prompt);
+
+			for await (const event of currentQueryGenerator) {
+				const msgType = event.type;
+				switch (msgType) {
+					case "assistant": {
+						const assistantEvent = event;
+						for (const block of assistantEvent.message.content) {
+							if (block.type === "text" && block.text) {
+								chatContainer.addChild(new TextComponent(chalk.magenta("Claude")));
+								chatContainer.addChild(new MarkdownComponent(block.text));
+								chatContainer.addChild(new WhitespaceComponent(1));
+							} else if (block.type === "tool_use") {
+								// Use custom renderer for tool calls
+								const toolInfo = ToolRenderer.renderToolUse(block);
+								const toolMsg = new TextComponent(toolInfo, { bottom: 1 });
+								chatContainer.addChild(toolMsg);
+							}
+						}
+						ui.requestRender();
 						break;
 					}
 
-					// Regular user messages contain tool results
-					for (const block of (message as SDKUserMessage).message.content) {
-						if (typeof block === "object" && block.type === "tool_result") {
-							// Use custom renderer for tool results
-							const result = ToolRenderer.renderToolResult(block);
-							chatContainer.addChild(new TextComponent(result.header));
-							chatContainer.addChild(new TextComponent(result.content, { bottom: 1 }));
+					case "user": {
+						// Handle tool results
+						const userEvent = event;
+						if (userEvent.parent_tool_use_id) {
+							// This is a subagent message - ignore for now
+							break;
+						}
 
-							if (result.truncated) {
-								chatContainer.addChild(new TextComponent(chalk.dim(result.truncated), { bottom: 1 }));
+						// Regular user messages contain tool results
+						for (const block of userEvent.message.content) {
+							if (typeof block === "object" && block.type === "tool_result") {
+								// Use custom renderer for tool results
+								const result = ToolRenderer.renderToolResult(block);
+								chatContainer.addChild(new TextComponent(result.header));
+								chatContainer.addChild(new TextComponent(result.content, { bottom: 1 }));
+
+								if (result.truncated) {
+									chatContainer.addChild(new TextComponent(chalk.dim(result.truncated), { bottom: 1 }));
+								}
 							}
 						}
-					}
-					ui.requestRender();
-					break;
-				}
-
-				case "result": {
-					// Remove loading animation when we get the result
-					if (currentLoadingAnimation !== null) {
-						(currentLoadingAnimation as LoadingAnimation).stop();
-						loadingContainer.clear();
-						currentLoadingAnimation = null;
+						ui.requestRender();
+						break;
 					}
 
-					// Mark as no longer processing
-					isProcessing = false;
-					editor.disableSubmit = false;
+					case "result": {
+						// Remove loading animation when we get the result
+						if (currentLoadingAnimation !== null) {
+							currentLoadingAnimation.stop();
+							loadingContainer.clear();
+							currentLoadingAnimation = null;
+						}
 
-					// Add result message
-					const resultMsg = new ResultMessage(message as SDKResultMessage);
-					chatContainer.addChild(resultMsg);
-					ui.requestRender();
-					break;
+						// Add result message
+						const resultMsg = new ResultMessage(event);
+						chatContainer.addChild(resultMsg);
+						ui.requestRender();
+						break;
+					}
+
+					default:
+						// Ignore other message types
+						break;
 				}
-
-				default:
-					// Ignore other message types
-					break;
 			}
-		}
+		} catch (error) {
+			// Remove loading animation on error
+			if (currentLoadingAnimation !== null) {
+				currentLoadingAnimation.stop();
+				loadingContainer.clear();
+				currentLoadingAnimation = null;
+			}
 
-		// Claude process ended
-		chatContainer.addChild(new TextComponent(chalk.dim("Claude process ended"), { bottom: 1 }));
-		ui.requestRender();
-		setTimeout(() => {
-			ui.stop();
-			process.exit(0);
-		}, 2000);
-	})();
+			// Show error
+			chatContainer.addChild(
+				new TextComponent(chalk.red(`Error: ${error instanceof Error ? error.message : String(error)}`), {
+					bottom: 1,
+				}),
+			);
+			ui.requestRender();
+		} finally {
+			// Mark as no longer processing
+			isProcessing = false;
+			editor.disableSubmit = false;
+			currentQueryGenerator = null;
+		}
+	}
 
 	// Handle user input
 	editor.onSubmit = (text: string) => {
@@ -294,7 +299,7 @@ async function main() {
 
 				case "exit":
 				case "quit":
-					claudeInstance.stop();
+					claude.stop();
 					ui.stop();
 					process.exit(0);
 					return;
@@ -306,22 +311,8 @@ async function main() {
 		chatContainer.addChild(new MarkdownComponent(text));
 		chatContainer.addChild(new WhitespaceComponent(1));
 
-		// Show loading animation
-		currentLoadingAnimation = new LoadingAnimation(ui);
-		loadingContainer.addChild(currentLoadingAnimation);
-		ui.requestRender();
-
-		// Mark as processing
-		isProcessing = true;
-		editor.disableSubmit = true;
-
-		// Send to Claude
-		claudeInstance.sendMessage(text).catch((error) => {
-			chatContainer.addChild(new TextComponent(chalk.red(`Error: ${error.message}`), { bottom: 1 }));
-			ui.requestRender();
-			isProcessing = false;
-			editor.disableSubmit = false;
-		});
+		// Process the query
+		processQuery(text);
 	};
 
 	// Handle Ctrl+C
@@ -329,7 +320,7 @@ async function main() {
 		if (currentLoadingAnimation) {
 			currentLoadingAnimation.stop();
 		}
-		claudeInstance.stop();
+		claude.stop();
 		ui.stop();
 		process.exit(0);
 	});
@@ -344,22 +335,8 @@ async function main() {
 		chatContainer.addChild(new MarkdownComponent(initialPrompt));
 		chatContainer.addChild(new WhitespaceComponent(1));
 
-		// Show loading animation
-		currentLoadingAnimation = new LoadingAnimation(ui);
-		loadingContainer.addChild(currentLoadingAnimation);
-		ui.requestRender();
-
-		// Mark as processing
-		isProcessing = true;
-		editor.disableSubmit = true;
-
-		// Send to Claude
-		claudeInstance.sendMessage(initialPrompt).catch((error) => {
-			chatContainer.addChild(new TextComponent(chalk.red(`Error: ${error.message}`), { bottom: 1 }));
-			ui.requestRender();
-			isProcessing = false;
-			editor.disableSubmit = false;
-		});
+		// Process the query
+		processQuery(initialPrompt);
 	}
 }
 

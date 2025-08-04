@@ -25,7 +25,7 @@ export class ToolRenderer {
 	 */
 	static renderToolUse(block: ToolUse): string {
 		const toolName = block.name;
-		const input = (block.input && typeof block.input === "object" ? block.input : {}) as Record<string, any>;
+		const input = (block.input && typeof block.input === "object" ? block.input : {}) as Record<string, unknown>;
 
 		switch (toolName) {
 			case "LS":
@@ -86,7 +86,7 @@ export class ToolRenderer {
 		}
 	}
 
-	private static renderLSCall(input: Record<string, any>): string {
+	private static renderLSCall(input: Record<string, unknown>): string {
 		const path = input.path || "current directory";
 		return chalk.yellow(`[Tool: LS]`) + chalk.dim(` path: ${path}`);
 	}
@@ -115,7 +115,7 @@ export class ToolRenderer {
 		return { header, content: chalk.dim(preview), truncated };
 	}
 
-	private static renderReadCall(input: Record<string, any>): string {
+	private static renderReadCall(input: Record<string, unknown>): string {
 		const path = input.file_path || "unknown";
 		const limit = input.limit;
 		const offset = input.offset;
@@ -148,14 +148,14 @@ export class ToolRenderer {
 		return { header, content: chalk.dim(preview), truncated };
 	}
 
-	private static renderFileModificationCall(toolName: string, input: Record<string, any>): string {
+	private static renderFileModificationCall(toolName: string, input: Record<string, unknown>): string {
 		const path = input.file_path || "unknown";
 		let info = chalk.yellow(`[Tool: ${toolName}]`) + chalk.dim(` file: ${path}`);
 
 		if (toolName === "Edit" || toolName === "MultiEdit") {
 			const oldStr = input.old_string;
 			const newStr = input.new_string;
-			if (oldStr && newStr) {
+			if (typeof oldStr === "string" && typeof newStr === "string") {
 				const oldLines = oldStr.split("\n").length;
 				const newLines = newStr.split("\n").length;
 				info += chalk.dim(` (${oldLines} → ${newLines} lines)`);
@@ -179,7 +179,7 @@ export class ToolRenderer {
 		return { header, content: chalk.dim(preview) };
 	}
 
-	private static renderGrepCall(input: Record<string, any>): string {
+	private static renderGrepCall(input: Record<string, unknown>): string {
 		const pattern = input.pattern || "";
 		const path = input.path || ".";
 		const glob = input.glob;
@@ -214,7 +214,7 @@ export class ToolRenderer {
 		return { header, content: chalk.dim(preview), truncated };
 	}
 
-	private static renderBashCall(input: Record<string, any>): string {
+	private static renderBashCall(input: Record<string, unknown>): string {
 		const command = input.command || "";
 		const description = input.description;
 
@@ -224,7 +224,7 @@ export class ToolRenderer {
 		return info;
 	}
 
-	private static renderTaskCall(input: Record<string, any>): string {
+	private static renderTaskCall(input: Record<string, unknown>): string {
 		const description = input.description || "";
 		const subagent = input.subagent_type || "general-purpose";
 
@@ -235,7 +235,7 @@ export class ToolRenderer {
 		);
 	}
 
-	private static renderDefaultCall(toolName: string, input: Record<string, any>): string {
+	private static renderDefaultCall(toolName: string, input: Record<string, unknown>): string {
 		// Extract key parameters
 		const params = Object.entries(input)
 			.filter(([_, value]) => value !== undefined && value !== null)
