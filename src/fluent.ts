@@ -5,6 +5,7 @@ export class ClaudeCodeBuilder {
 	private claude: Claude | null = null;
 	private lastSessionId: string | null = null;
 	private currentPrompt: string | null = null;
+	private currentQuery: AsyncGenerator<ClaudeEvent> | null = null;
 
 	// Configuration state
 	private args: string[] = [];
@@ -80,16 +81,22 @@ export class ClaudeCodeBuilder {
 		// Track session ID from init event
 		let seenInit = false;
 
-		for await (const event of this.claude!.query(this.currentPrompt)) {
-			if (!seenInit && event.type === "system" && event.subtype === "init") {
-				seenInit = true;
-				this.lastSessionId = event.session_id;
-			}
-			yield event;
-		}
+		// Store the generator so we can access it for interrupt
+		this.currentQuery = this.claude!.query(this.currentPrompt);
 
-		// Reset prompt after use
-		this.currentPrompt = null;
+		try {
+			for await (const event of this.currentQuery) {
+				if (!seenInit && event.type === "system" && event.subtype === "init") {
+					seenInit = true;
+					this.lastSessionId = event.session_id;
+				}
+				yield event;
+			}
+		} finally {
+			// Reset state after completion
+			this.currentPrompt = null;
+			this.currentQuery = null;
+		}
 	}
 
 	async execute(): Promise<ClaudeEvent[]> {
@@ -118,10 +125,19 @@ export class ClaudeCodeBuilder {
 		return resultEvent;
 	}
 
+	interrupt(): void {
+		if (!this.claude) {
+			throw new Error("No active Claude instance to interrupt");
+		}
+
+		this.claude.interrupt();
+	}
+
 	stop(): void {
 		if (this.claude) {
 			this.claude.stop();
 			this.claude = null;
+			this.currentQuery = null;
 		}
 	}
 }

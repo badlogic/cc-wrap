@@ -145,14 +145,25 @@ async function main() {
 	ui.onGlobalKeyPress = (data: string): boolean => {
 		// Intercept Escape key when Claude is processing
 		if (data === "\x1b" && isProcessing) {
-			// Send interrupt request
-			claude.interrupt().catch(() => {
-				// Ignore errors
-			});
+			try {
+				// Send interrupt request (synchronous now)
+				claude.interrupt();
 
-			// Show feedback
-			chatContainer.addChild(new TextComponent(chalk.yellow("[Interrupt requested]"), { bottom: 1 }));
-			ui.requestRender();
+				// Show success feedback
+				chatContainer.addChild(new TextComponent(chalk.yellow("[Processing interrupted]"), { bottom: 1 }));
+				ui.requestRender();
+			} catch (error) {
+				// Show error feedback
+				chatContainer.addChild(
+					new TextComponent(
+						chalk.red(`[Interrupt failed: ${error instanceof Error ? error.message : String(error)}]`),
+						{
+							bottom: 1,
+						},
+					),
+				);
+				ui.requestRender();
+			}
 
 			// Don't forward to editor
 			return false;

@@ -61,8 +61,9 @@ export function getClaudePath(): string {
 		// which failed, continue searching
 	}
 
-	// Check common locations
+	// Check common locations including the claude local installation
 	const locations = [
+		join(homedir(), ".claude/local/claude"),
 		join(homedir(), ".npm-global/bin/claude"),
 		"/usr/local/bin/claude",
 		join(homedir(), ".local/bin/claude"),
@@ -115,6 +116,9 @@ export interface ControlResponseEvent {
 	};
 }
 
+// Type for control response handler
+type ControlResponseHandler = (response: ControlResponseEvent["response"]) => void;
+
 // Error event for internal use
 interface ErrorEvent {
 	type: "error";
@@ -139,13 +143,15 @@ export class Claude {
 	private sessionId: string = "";
 	private currentHandler: ((event: InternalEvent) => void) | null = null;
 	private error: Error | null = null;
+	private pendingControlResponses = new Map<string, ControlResponseHandler>();
+	private isInterrupted = false;
 
 	constructor(args: string[], env: Record<string, string>) {
 		// Always add required args for interactive mode
 		const fullArgs = ["--output-format", "stream-json", "--input-format", "stream-json", "--verbose", ...args];
 
 		this.process = spawn(getClaudePath(), fullArgs, {
-			env,
+			env: { ...process.env, ...env },
 			stdio: ["pipe", "pipe", "pipe"],
 		});
 
@@ -154,6 +160,16 @@ export class Claude {
 		this.rl.on("line", (line) => {
 			try {
 				const event = JSON.parse(line);
+
+				// Handle control responses separately
+				if (event.type === "control_response") {
+					const handler = this.pendingControlResponses.get(event.response.request_id);
+					if (handler) {
+						this.pendingControlResponses.delete(event.response.request_id);
+						handler(event.response);
+					}
+					return;
+				}
 
 				if (event.type === "system" && event.subtype === "init") {
 					this.sessionId = event.session_id;
@@ -176,11 +192,16 @@ export class Claude {
 			}
 		});
 
-		this.process.on("exit", (code) => {
-			if (code !== 0) {
+		this.process.on("exit", (code, _signal) => {
+			if (this.isInterrupted) {
+				// Process was interrupted by user
+				this.error = new Error("Interrupted by user");
+				if (this.currentHandler) {
+					this.currentHandler({ type: "error", error: this.error });
+				}
+			} else if (code !== 0) {
 				this.error = new Error(`Claude process exited with code ${code}`);
 				if (this.currentHandler) {
-					// Send a fake error event
 					this.currentHandler({ type: "error", error: this.error });
 				}
 			}
@@ -253,18 +274,18 @@ export class Claude {
 			}
 		} finally {
 			this.currentHandler = null;
+			this.isInterrupted = false; // Reset for next query
 		}
 	}
 
-	async interrupt(): Promise<void> {
-		const requestId = `req_${Math.random().toString(16).substring(2, 10)}`;
-		const interruptRequest = {
-			type: "control_request",
-			request_id: requestId,
-			request: { subtype: "interrupt" },
-		};
+	interrupt(): void {
+		// Mark as interrupted
+		this.isInterrupted = true;
 
-		this.process.stdin!.write(`${JSON.stringify(interruptRequest)}\n`);
+		// Kill the process - this is what actually stops Claude
+		if (this.process && !this.process.killed) {
+			this.process.kill("SIGTERM");
+		}
 	}
 
 	stop(): void {
