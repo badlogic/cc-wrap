@@ -2,13 +2,14 @@
 	"name": "ccwrap",
 	"version": "0.1.0",
 	"description": "TypeScript API wrapper for Claude Code supporting interactive and non-interactive modes",
+	"type": "module",
 	"main": "dist/index.js",
 	"scripts": {
 		"build": "tsc",
 		"dev": "tsc --watch --preserveWatchOutput",
 		"clean": "rm -rf dist",
 		"prepublishOnly": "npm run clean && npm run build",
-		"check": "biome check . && tsc --noEmit"
+		"check": "biome check --write . && tsc --noEmit"
 	},
 	"files": [
 		"dist/**/*",
@@ -35,5 +36,12 @@
 		"@types/node": "^20.19.9",
 		"typescript": "^5.0.0"
 	},
-	"types": "./dist/index.d.ts"
+	"types": "./dist/index.d.ts",
+	"dependencies": {
+		"@anthropic-ai/claude-code": "^1.0.67",
+		"@anthropic-ai/sdk": "^0.57.0",
+		"@mariozechner/tui": "file:../tui",
+		"chalk": "^5.4.1",
+		"marked": "^16.1.1"
+	}
 }

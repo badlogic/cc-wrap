@@ -1,0 +1,1 @@
+- After finishing code changes, run npm run check and fix any reported linting and typechecking errors.
