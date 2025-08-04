@@ -3,12 +3,7 @@ import { copyFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { createInterface, type Interface } from "node:readline";
-import type {
-	SDKAssistantMessage,
-	SDKResultMessage,
-	SDKSystemMessage,
-	SDKUserMessage,
-} from "@anthropic-ai/claude-code";
+import type { SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-code";
 
 export function patchClaudeBinary(): void {
 	const claudePath = getClaudePath();
@@ -104,11 +99,8 @@ interface ErrorEvent {
 	error: Error;
 }
 
-// Union type including SDK messages
-export type ClaudeEvent = SDKSystemMessage | SDKAssistantMessage | SDKUserMessage | SDKResultMessage;
-
 // Internal event type that includes error events
-type InternalEvent = ClaudeEvent | ErrorEvent;
+type InternalEvent = SDKMessage | ErrorEvent;
 
 export class Claude {
 	private process: ChildProcess;
@@ -170,7 +162,7 @@ export class Claude {
 		});
 	}
 
-	async *query(prompt: string): AsyncGenerator<ClaudeEvent> {
+	async *query(prompt: string): AsyncGenerator<SDKMessage> {
 		if (this.currentHandler) {
 			throw new Error("Query already in progress");
 		}
@@ -228,7 +220,7 @@ export class Claude {
 					throw event.error;
 				}
 
-				yield event as ClaudeEvent;
+				yield event as SDKMessage;
 
 				if (event.type === "result") {
 					break;

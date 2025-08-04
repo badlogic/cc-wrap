@@ -1,11 +1,11 @@
-import type { SDKResultMessage } from "@anthropic-ai/claude-code";
-import { Claude, type ClaudeEvent } from "./claude.js";
+import type { SDKMessage, SDKResultMessage } from "@anthropic-ai/claude-code";
+import { Claude } from "./claude.js";
 
 export class ClaudeCodeBuilder {
 	private claude: Claude | null = null;
 	private lastSessionId: string | null = null;
 	private currentPrompt: string | null = null;
-	private currentQuery: AsyncGenerator<ClaudeEvent> | null = null;
+	private currentQuery: AsyncGenerator<SDKMessage> | null = null;
 
 	// Configuration state
 	private args: string[] = [];
@@ -71,7 +71,7 @@ export class ClaudeCodeBuilder {
 		}
 	}
 
-	async *stream(): AsyncGenerator<ClaudeEvent> {
+	async *stream(): AsyncGenerator<SDKMessage> {
 		if (!this.currentPrompt) {
 			throw new Error("No prompt set. Call .prompt() first.");
 		}
@@ -99,8 +99,8 @@ export class ClaudeCodeBuilder {
 		}
 	}
 
-	async execute(): Promise<ClaudeEvent[]> {
-		const events: ClaudeEvent[] = [];
+	async execute(): Promise<SDKMessage[]> {
+		const events: SDKMessage[] = [];
 		for await (const event of this.stream()) {
 			events.push(event);
 		}

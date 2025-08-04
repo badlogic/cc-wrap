@@ -10,8 +10,8 @@ import {
 	WhitespaceComponent,
 } from "@mariozechner/tui";
 import chalk from "chalk";
-import { Claude, type ClaudeEvent, patchClaudeBinary } from "./claude.js";
-import type { SDKResultMessage } from "./index.js";
+import { Claude, patchClaudeBinary } from "./claude.js";
+import type { SDKMessage, SDKResultMessage } from "./index.js";
 import { ToolRenderer } from "./tool-renderers.js";
 
 class LoadingAnimation extends TextComponent {
@@ -139,7 +139,7 @@ async function main() {
 
 	let currentLoadingAnimation: LoadingAnimation | null = null;
 	let isProcessing = false;
-	let currentQueryGenerator: AsyncGenerator<ClaudeEvent> | null = null;
+	let currentQueryGenerator: AsyncGenerator<SDKMessage> | null = null;
 
 	// Set up global key handler for Escape
 	ui.onGlobalKeyPress = (data: string): boolean => {
