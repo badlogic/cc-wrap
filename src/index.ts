@@ -7,14 +7,7 @@ export type {
 	SDKUserMessage,
 } from "@anthropic-ai/claude-code";
 
-export {
-	Claude,
-	type ClaudeEvent,
-	type ControlRequestEvent,
-	type ControlResponseEvent,
-	getClaudePath,
-	patchClaudeBinary,
-} from "./claude.js";
+export { Claude, type ClaudeEvent, getClaudePath, patchClaudeBinary } from "./claude.js";
 
 export {
 	ClaudeCode,

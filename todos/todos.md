@@ -1,0 +1,4 @@
+- Interrupting in chat-tui.ts kills process, doesn't recreate it upon new user query
+- chat-tui.ts should accept multiple prompt strings
+    - Feed claude the first prompt, wait for result, feed the next, rinse, repeat
+    - If prompt string equals <EXIT>, exit process (same as /quit or /exit slash command)

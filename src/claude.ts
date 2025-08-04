@@ -98,41 +98,14 @@ export function getClaudePath(): string {
 	);
 }
 
-// Additional event types not in SDK but documented in claude-stream-json.md
-export interface ControlRequestEvent {
-	type: "control_request";
-	request_id: string;
-	request: {
-		subtype: "interrupt";
-	};
-}
-
-export interface ControlResponseEvent {
-	type: "control_response";
-	response: {
-		request_id: string;
-		subtype: "success" | "error";
-		error?: string;
-	};
-}
-
-// Type for control response handler
-type ControlResponseHandler = (response: ControlResponseEvent["response"]) => void;
-
 // Error event for internal use
 interface ErrorEvent {
 	type: "error";
 	error: Error;
 }
 
-// Union type including SDK messages and additional event types
-export type ClaudeEvent =
-	| SDKSystemMessage
-	| SDKAssistantMessage
-	| SDKUserMessage
-	| SDKResultMessage
-	| ControlRequestEvent
-	| ControlResponseEvent;
+// Union type including SDK messages
+export type ClaudeEvent = SDKSystemMessage | SDKAssistantMessage | SDKUserMessage | SDKResultMessage;
 
 // Internal event type that includes error events
 type InternalEvent = ClaudeEvent | ErrorEvent;
@@ -143,7 +116,6 @@ export class Claude {
 	private sessionId: string = "";
 	private currentHandler: ((event: InternalEvent) => void) | null = null;
 	private error: Error | null = null;
-	private pendingControlResponses = new Map<string, ControlResponseHandler>();
 	private isInterrupted = false;
 
 	constructor(args: string[], env: Record<string, string>) {
@@ -160,16 +132,6 @@ export class Claude {
 		this.rl.on("line", (line) => {
 			try {
 				const event = JSON.parse(line);
-
-				// Handle control responses separately
-				if (event.type === "control_response") {
-					const handler = this.pendingControlResponses.get(event.response.request_id);
-					if (handler) {
-						this.pendingControlResponses.delete(event.response.request_id);
-						handler(event.response);
-					}
-					return;
-				}
 
 				if (event.type === "system" && event.subtype === "init") {
 					this.sessionId = event.session_id;
