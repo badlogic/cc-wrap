@@ -88,13 +88,6 @@ async function getInitInfo(): Promise<ClaudeInitInfo> {
 	const claudeInstance = claude({ configDir: tmpConfigDir });
 	const initInfo = await claudeInstance.sendPrompt("say hi");
 
-	// Collect all messages until we get the result
-	for await (const message of claudeInstance.messages()) {
-		if (message.type === "result") {
-			break;
-		}
-	}
-
 	claudeInstance.stop();
 	return initInfo;
 }

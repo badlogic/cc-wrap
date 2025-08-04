@@ -55,6 +55,14 @@ export class Claude {
 		if (this.options.sessionId) args.push("--session", this.options.sessionId);
 
 		await this.startProcess(args);
+		
+		// Wait for init message
+		for await (const message of this.messages()) {
+			if (message.type === "system" && message.subtype === "init") {
+				break;
+			}
+		}
+		
 		return this.initInfo!;
 	}
 
