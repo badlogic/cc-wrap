@@ -7,7 +7,7 @@ export type {
 	SDKUserMessage,
 } from "@anthropic-ai/claude-code";
 
-export { Claude, getClaudePath, patchClaudeBinary } from "./claude.js";
+export { Claude } from "./claude.js";
 
 export {
 	ClaudeCode,

@@ -1,5 +1,6 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { patchClaudeBinary } from "@mariozechner/cc-antidebug";
 import {
 	CombinedAutocompleteProvider,
 	Container,
@@ -10,7 +11,7 @@ import {
 	WhitespaceComponent,
 } from "@mariozechner/tui";
 import chalk from "chalk";
-import { Claude, patchClaudeBinary } from "./claude.js";
+import { Claude } from "./claude.js";
 import type { SDKMessage, SDKResultMessage } from "./index.js";
 import { ToolRenderer } from "./tool-renderers.js";
 
@@ -225,7 +226,7 @@ async function main() {
 						const assistantEvent = event;
 						for (const block of assistantEvent.message.content) {
 							if (block.type === "text" && block.text) {
-								chatContainer.addChild(new TextComponent(chalk.magenta("Claude")));
+								chatContainer.addChild(new TextComponent(chalk.magenta(">>> Claude")));
 								chatContainer.addChild(new MarkdownComponent(block.text));
 								chatContainer.addChild(new WhitespaceComponent(1));
 							} else if (block.type === "tool_use") {
@@ -349,7 +350,7 @@ async function main() {
 		}
 
 		// Add user message to chat
-		chatContainer.addChild(new TextComponent(chalk.green("You")));
+		chatContainer.addChild(new TextComponent(chalk.green(">>> You")));
 		chatContainer.addChild(new MarkdownComponent(text));
 		chatContainer.addChild(new WhitespaceComponent(1));
 
