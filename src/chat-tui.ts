@@ -86,6 +86,12 @@ async function main() {
 		process.exit(1);
 	}
 
+	if (process.env.CLAUDE_CODE_OAUTH_TOKEN) {
+		console.log("Using OAuth token for authentication");
+	} else {
+		console.log("Using API key for authentication");
+	}
+
 	// Patch Claude binary automatically on startup
 	patchClaudeBinary();
 
@@ -95,10 +101,9 @@ async function main() {
 
 	// Initialize Claude
 	console.log(chalk.dim("Initializing Claude..."));
-	const claude = new Claude([], {
+	const claude = new Claude(["--model", "opus"], {
 		...process.env,
 		CLAUDE_CONFIG_DIR: configDir,
-		CLAUDE_CODE_ENTRYPOINT: "sdk-ts",
 	});
 
 	const ui = new TUI();

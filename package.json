@@ -1,5 +1,5 @@
 {
-	"name": "ccwrap",
+	"name": "@mariozechner/cc-wrap",
 	"version": "0.1.0",
 	"description": "TypeScript API wrapper for Claude Code supporting interactive and non-interactive modes",
 	"type": "module",

@@ -1,11 +1,11 @@
-# ccwrap
+# cc-wrap
 
-TypeScript API wrapper for Claude Code supporting interactive and non-interactive modes.
+TypeScript API wrapper for Claude Code supporting interactive and non-interactive modes. Include alternative Claude Code TUI.
 
 ## Installation
 
 ```bash
-npm install ccwrap
+npm install cc-wrap
 ```
 
 ## Usage
